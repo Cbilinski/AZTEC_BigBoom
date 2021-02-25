@@ -1,0 +1,353 @@
+Make sure to load the following packages if they aren't already:
+imred
+ccdred
+onedspec
+twodspec
+longslit
+apextract
+
+
+1. Because the files are multiple extension you need to break them apart since you really only need to run reductions on half.  To do this you can use the package mscred -- mscsplit. So I would type (or put in epar)
+
+--> mscsplit *proc .fits
+
+Which would take all of the proc files in your directory and split them up.  Then you just need to figure out which extension (1 or 2) the spectrum is on and only work on those.  Generally I find they're on chip 2 (IM5 in Binospec talk) but it's not always the case.
+
+2. Now that they're split you need to combine the continuum flats.  This is done with flatcombine and the parameters I use are here:
+
+ input = "*4936_proc_2.fits,*5042_proc_2.fits,*5147_proc_2.fits" List of flat field images to combine
+      (output = "master_flat")  Output flat field root name
+     (combine = "average")      Type of combine operation
+      (reject = "crreject")     Type of rejection
+     (ccdtype = "")             CCD image type to combine
+     (process = no)             Process images before combining?
+     (subsets = no)             Combine images by subset parameter?
+      (delete = no)             Delete input images after combining?
+     (clobber = no)             Clobber existing output image?
+       (scale = "mode")         Image scaling
+     (statsec = "")             Image section for computing statistics
+        (nlow = 1)              minmax: Number of low pixels to reject
+       (nhigh = 1)              minmax: Number of high pixels to reject
+       (nkeep = 1)              Minimum to keep (pos) or maximum to reject (neg)
+       (mclip = yes)            Use median in sigma clipping algorithms?
+      (lsigma = 3.0)            Lower sigma clipping factor
+      (hsigma = 3.0)            Upper sigma clipping factor
+     (rdnoise = "3.5")          ccdclip: CCD readout noise (electrons)
+        (gain = "GAIN")         ccdclip: CCD gain (electrons/DN)
+      (snoise = "0.")           ccdclip: Sensitivity noise (fraction)
+       (pclip = -0.5)           pclip: Percentile clipping parameter
+       (blank = 1.0)            Value if there are no pixels
+        (mode = "al")           
+
+Instead of listing each file in the input you can also put their names in a text file and use @texfile name.
+
+3.  One weird thing is that they don't copy which axis the dispersion (Wavelength) is, so we need to quickly run hedit to put that in the header.  The parameters are:
+
+images = "*proc_2.fits"  images to be edited
+       fields = "DISPAXIS"      fields to be edited
+        value = "1"             value expression
+         (add = yes)            add rather than edit fields
+     (addonly = no)             add only if field does not exist
+      (delete = no)             delete rather than edit fields
+      (verify = no)             verify each edit operation
+        (show = no)             print record of each edit operation
+      (update = yes)            enable updating of the image header
+        (mode = "al")           
+
+4.  Now we can create a normalized flat field by using response (in the longslit package).  Massey explains this well in his document, and you can choose your own sample regions interactively by typing z to delete and s to create, but this is what I've used:
+
+ calibration = "master_flat"   Longslit calibration images
+ normalizatio = "master_flat"   Normalization spectrum images
+     response = "normal_flat"   Response function images
+ (interactive = yes)            Fit normalization spectrum interactively?
+   (threshold = INDEF)          Response threshold
+      (sample = " 67:2955 3050:3293 3345:4038") Sample of points to use in fit
+    (naverage = 1)              Number of points in sample averaging
+    (function = "spline3")      Fitting function
+       (order = 40)             Order of fitting function
+  (low_reject = 3.0)            Low rejection in sigma of fit
+ (high_reject = 3.0)            High rejection in sigma of fit
+    (niterate = 1)              Number of rejection iterations
+        (grow = 0.0)            Rejection growing radius
+    (graphics = "stdgraph")     Graphics output device
+      (cursor = "")             Graphics cursor input
+        (mode = "al")           
+
+5.  The normal_flat.fits can now be applied to the both the arc and the science files.  I normally just move the raw flats into a separate file so I don't have to deal with them anymore.  Then I run ccdproc:
+ images = "*proc_2.fits"  List of CCD images to correct
+      (output = "")             List of output CCD images
+     (ccdtype = "")             CCD image type to correct
+   (max_cache = 0)              Maximum image caching memory (in Mbytes)
+      (noproc = no)             List processing steps only?
+                                
+      (fixpix = no)             Fix bad CCD lines and columns?
+    (overscan = no)             Apply overscan strip correction?
+        (trim = no)             Trim the image?
+     (zerocor = no)             Apply zero level correction?
+     (darkcor = no)             Apply dark count correction?
+     (flatcor = yes)            Apply flat field correction?
+    (illumcor = no)             Apply illumination correction?
+   (fringecor = no)             Apply fringe correction?
+     (readcor = no)             Convert zero level image to readout correction?
+     (scancor = no)             Convert flat field image to scan correction?
+                                
+    (readaxis = "line")         Read out axis (column|line)
+     (fixfile = "")             File describing the bad lines and columns
+     (biassec = "")             Overscan strip image section
+     (trimsec = "")             Trim data section
+        (zero = "")             Zero level calibration image
+        (dark = "")             Dark count calibration image
+        (flat = "normal_flat.fits") Flat field images
+       (illum = "")             Illumination correction images
+      (fringe = "")             Fringe correction images
+  (minreplace = 1.0)            Minimum flat field value
+    (scantype = "shortscan")    Scan type (shortscan|longscan)
+       (nscan = 1)              Number of short scan lines
+                                
+ (interactive = no)             Fit overscan interactively?
+    (function = "legendre")     Fitting function
+       (order = 1)              Number of polynomial terms or spline pieces
+      (sample = "*")            Sample points to fit
+    (naverage = 1)              Number of sample points to combine
+    (niterate = 1)              Number of rejection iterations
+  (low_reject = 3.0)            Low sigma rejection factor
+ (high_reject = 3.0)            High sigma rejection factor
+        (grow = 0.0)            Rejection growing radius
+        (mode = "al")           
+
+6.  We need to create a dispersion solution with the arc file.  As far as I can tell Binospec uses a normal HeNeAr lamp.  For comparison I use the Bluechannel list here: http://www.mmto.org/~rcool/arc_plots/bluechan_300gpm_5.png
+Once again go through Phil's manual but basically you give it a few line wavelengths and work with it until you get a good solution!
+
+ images = "sci_img_2020.0315.094824_proc_2.fits" Images containing features to be identified
+        crval =                 Approximate coordinate (at reference pixel)
+        cdelt =                 Approximate dispersion
+     (section = "middle line")  Section to apply to two dimensional images
+    (database = "database")     Database in which to record feature data
+   (coordlist = "linelists$idhenear.dat") User coordinate list
+       (units = "")             Coordinate units
+        (nsum = "3")            Number of lines/columns/bands to sum in 2D images
+       (match = -3.0)           Coordinate list matching limit
+ (maxfeatures = 50)             Maximum number of features for automatic identification
+      (zwidth = 100.0)          Zoom graph width in user units
+       (ftype = "emission")     Feature type
+      (fwidth = 4.0)            Feature width in pixels
+     (cradius = 5.0)            Centering radius in pixels
+   (threshold = 0.0)            Feature threshold for centering
+      (minsep = 2.0)            Minimum pixel separation
+    (function = "spline3")      Coordinate function
+       (order = 1)              Order of coordinate function
+      (sample = "*")            Coordinate sample regions
+    (niterate = 0)              Rejection iterations
+  (low_reject = 3.0)            Lower rejection sigma
+ (high_reject = 3.0)            Upper rejection sigma
+        (grow = 0.0)            Rejection growing radius
+   (autowrite = no)             Automatically write to database
+    (graphics = "stdgraph")     Graphics output device
+      (cursor = "")             Graphics cursor input
+     (aidpars = "")             Automatic identification algorithm parameters
+        (mode = "al")           
+
+
+7.  Next we apply this to the header of the science images using refspec:
+
+ input = "*proc_2.fits"  List of input spectra
+       answer = "YES"           Accept assignment?
+  (references = "sci_img_2020.0315.094824_proc_2.fits") List of reference spectra
+   (apertures = "")             Input aperture selection list
+      (refaps = "")             Reference aperture selection list
+   (ignoreaps = yes)            Ignore input and reference apertures?
+      (select = "interp")       Selection method for reference spectra
+        (sort = "")             Sort key
+       (group = "")             Group key
+        (time = no)             Is sort key a time?
+    (timewrap = 17.0)           Time wrap point for time sorting
+    (override = yes)            Override previous assignments?
+     (confirm = no)             Confirm reference spectrum assignments?
+      (assign = yes)            Assign the reference spectra to the input spectrum?
+    (logfiles = "STDOUT,logfile") List of logfiles
+     (verbose = no)             Verbose log output?
+        (mode = "al")           
+
+
+8.  Now we can combine the 2D spectra.  We don't dither so it's super easy, we just stack them.  In some cases (line LBT) we do dither so you'll have to watch this.  Phil's manual has some good pointers on types of combining to use based on the number of images, generally I do average if < 5 images, median if 5 or more.  I'm also trimming this down since we only want a small portion of the 2D spectrum to extract.  Hint you may want to change your arc file to a different name to make the combining easier, or just create a text file of the image names depending on how many you have to combine. 
+
+  input = "@spec"         List of images to combine
+       output = "SN2019yvq"     List of output images
+     (headers = "")             List of header files (optional)
+     (bpmasks = "")             List of bad pixel masks (optional)
+    (rejmasks = "")             List of rejection masks (optional)
+   (nrejmasks = "")             List of number rejected masks (optional)
+    (expmasks = "")             List of exposure masks (optional)
+      (sigmas = "")             List of sigma images (optional)
+       (imcmb = "$I")           Keyword for IMCMB keywords
+     (logfile = "STDOUT")       Log file
+                                
+     (combine = "median")       Type of combine operation
+      (reject = "avsigclip")    Type of rejection
+     (project = no)             Project highest dimension of input images?
+     (outtype = "real")         Output image pixel datatype
+   (outlimits = "60 4090 1900 2300") Output limits (x1 x2 y1 y2 ...)
+     (offsets = "none")         Input image offsets
+    (masktype = "none")         Mask type
+   (maskvalue = "0")            Mask value
+       (blank = 0.0)            Value if there are no pixels
+                                
+       (scale = "none")         Image scaling
+        (zero = "none")         Image zero point offset
+      (weight = "none")         Image weights
+     (statsec = "")             Image section for computing statistics
+     (expname = "")             Image header exposure time keyword
+                                
+  (lthreshold = INDEF)          Lower threshold
+  (hthreshold = INDEF)          Upper threshold
+        (nlow = 1)              minmax: Number of low pixels to reject
+       (nhigh = 1)              minmax: Number of high pixels to reject
+       (nkeep = 1)              Minimum to keep (pos) or maximum to reject (neg)
+       (mclip = yes)            Use median in sigma clipping algorithms?
+      (lsigma = 3.0)            Lower sigma clipping factor
+      (hsigma = 3.0)            Upper sigma clipping factor
+     (rdnoise = "3.5")          ccdclip: CCD readout noise (electrons)
+        (gain = "GAIN")         ccdclip: CCD gain (electrons/DN)
+      (snoise = "0.")           ccdclip: Sensitivity noise (fraction)
+    (sigscale = 0.1)            Tolerance for sigma clipping scaling corrections
+       (pclip = -0.5)           pclip: Percentile clipping parameter
+        (grow = 2.0)            Radius (pixels) for neighbor rejection
+        (mode = "al")           
+
+
+9. Now we apply the dispersion correction use dispcor which will read the arc file name we put in the header from earlier
+
+  input = "SN2019yvq.fits" List of input spectra
+       output = "SN2019yvq_WC.fits" List of output spectra
+   (linearize = yes)            Linearize (interpolate) spectra?
+    (database = "database")     Dispersion solution database
+       (table = "")             Wavelength table for apertures
+          (w1 = INDEF)          Starting wavelength
+          (w2 = INDEF)          Ending wavelength
+          (dw = INDEF)          Wavelength interval per pixel
+          (nw = INDEF)          Number of output pixels
+         (log = no)             Logarithmic wavelength scale?
+        (flux = yes)            Conserve total flux?
+       (blank = 0.0)            Output value of points not in input
+    (samedisp = no)             Same dispersion in all apertures?
+      (global = no)             Apply global defaults?
+   (ignoreaps = no)             Ignore apertures?
+     (confirm = no)             Confirm dispersion coordinates?
+    (listonly = no)             List the dispersion coordinates only?
+     (verbose = yes)            Print linear dispersion assignments?
+     (logfile = "")             Log file
+        (mode = "al")           
+
+10.  I like to check that the solution is correct so I often will splot a section of sky on the 2D spectra and make sure for instance the 5577 and 6300 lines (usually the brightest) are where they should be. With Binospec they generally are, with B&C and Bluechannel you can have some issues since we don't take arcs with each observation
+--> splot SN2019yvq_WC.fits
+Image line/aperture to plot (0:) (175): 100
+
+
+11.  Once that looks good you can extract the spectrum using apall!  One thing to check is if there is a region of the 2D spectrum that has brighter continuum (or emission lines) than others.  That will be the best place to tell it to extract from.  For instance on my 2019yvq spectrum it's bright throughout so I'm just going to choose a region near the center that doesn't have a ton of sky lines, or around x coordinate of 1200.  This will go in the line entry in apall.  I have values in for apertures etc. but you can edit those interactively (once again Phil's manual is a valuable resource).  
+
+
+
+  input = "SN2019yvq_WC.fits" List of input images
+        nfind = 1               Number of apertures to be found automatically
+      (output = "")             List of output spectra
+   (apertures = "")             Apertures
+      (format = "onedspec")     Extracted spectra format
+  (references = "")             List of aperture reference images
+    (profiles = "")             List of aperture profile images
+                                
+ (interactive = yes)            Run task interactively?
+        (find = yes)            Find apertures?
+    (recenter = no)             Recenter apertures?
+      (resize = no)             Resize apertures?
+        (edit = yes)            Edit apertures?
+       (trace = yes)            Trace apertures?
+    (fittrace = yes)            Fit the traced points interactively?
+     (extract = yes)            Extract spectra?
+      (extras = no)             Extract sky, sigma, etc.?
+      (review = yes)            Review extractions?
+                                
+        (line = 1200)           Dispersion line
+        (nsum = 20)             Number of dispersion lines to sum or median
+                                
+                                # DEFAULT APERTURE PARAMETERS
+                                
+       (lower = -2.0)           Lower aperture limit relative to center
+       (upper = 2.0)            Upper aperture limit relative to center
+   (apidtable = "")             Aperture ID table (optional)
+                                
+                                # DEFAULT BACKGROUND PARAMETERS
+                                
+  (b_function = "chebyshev")    Background function
+     (b_order = 1)              Background function order
+    (b_sample = "-10:-6,6:10")  Background sample regions
+  (b_naverage = -3)             Background average or median
+  (b_niterate = 0)              Background rejection iterations
+(b_low_reject = 3.0)            Background lower rejection sigma
+(b_high_rejec = 3.0)            Background upper rejection sigma
+      (b_grow = 0.0)            Background rejection growing radius
+                                
+                                # APERTURE CENTERING PARAMETERS
+                                
+       (width = 5.0)            Profile centering width
+      (radius = 10.0)           Profile centering radius
+   (threshold = 0.0)            Detection threshold for profile centering
+                                
+                                # AUTOMATIC FINDING AND ORDERING PARAMETERS
+                                
+      (minsep = 5.0)            Minimum separation between spectra
+      (maxsep = 100000.0)       Maximum separation between spectra
+       (order = "increasing")   Order of apertures
+
+    # RECENTERING PARAMETERS
+                                
+  (aprecenter = "")             Apertures for recentering calculation
+      (npeaks = INDEF)          Select brightest peaks
+       (shift = yes)            Use average shift instead of recentering?
+                                
+                                # RESIZING PARAMETERS
+                                
+      (llimit = INDEF)          Lower aperture limit relative to center
+      (ulimit = INDEF)          Upper aperture limit relative to center
+      (ylevel = 0.1)            Fraction of peak or intensity for automatic width
+        (peak = yes)            Is ylevel a fraction of the peak?
+         (bkg = yes)            Subtract background in automatic width?
+      (r_grow = 0.0)            Grow limits by this factor
+   (avglimits = no)             Average limits over all apertures?
+                                
+                                # TRACING PARAMETERS
+                                
+      (t_nsum = 10)             Number of dispersion lines to sum
+      (t_step = 10)             Tracing step
+     (t_nlost = 3)              Number of consecutive times profile is lost before quitting
+  (t_function = "legendre")     Trace fitting function
+     (t_order = 3)              Trace fitting function order
+    (t_sample = "*")            Trace sample regions
+  (t_naverage = 1)              Trace average or median
+  (t_niterate = 0)              Trace rejection iterations
+(t_low_reject = 3.0)            Trace lower rejection sigma
+(t_high_rejec = 3.0)            Trace upper rejection sigma
+      (t_grow = 0.0)            Trace rejection growing radius
+                                
+                                # EXTRACTION PARAMETERS
+                                
+  (background = "fit")          Background to subtract
+      (skybox = 1)              Box car smoothing length for sky
+     (weights = "none")         Extraction weights (none|variance)
+        (pfit = "fit1d")        Profile fitting type (fit1d|fit2d)
+       (clean = no)             Detect and replace bad pixels?
+  (saturation = INDEF)          Saturation level
+   (readnoise = "3.5")          Read out noise sigma (photons)
+        (gain = "GAIN")         Photon gain (photons/data number)
+      (lsigma = 4.0)            Lower rejection threshold
+      (usigma = 4.0)            Upper rejection threshold
+     (nsubaps = 1)              Number of subapertures per aperture
+        (mode = "al")           
+
+12.  Normally the next step would be to extract the standard then run other routines (standard, sensfunc) to calibrate the spectrum but since we don't have that option here (no standards were taken) we just leave things in counts!  I like to often take the final spectrum and edit out some bad pixels before saving a final version.  To do this I just splot the WC.0001.fits file, then zoom in to any wavelength region by typing a and a on either side of the region I want in the splot window.  Then you can delete the line by type x and x again on either side of the line you want to delete.  When you want to zoom out just type aa and when you're ready to save you can just type i and it will allow you to save a new version with your filename of choice!
+
+
+
+Ok hopefully this helps.  Please let me know if/when you run into issues!
+
+
+
